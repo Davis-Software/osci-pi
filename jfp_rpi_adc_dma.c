@@ -5,15 +5,12 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <pigpio.h>
+#include <string.h>
+#include <math.h>
 
 #define CLK_PIN 18
 #define DATA_PINS { 4, 17, 27, 22, 10, 9, 11, 5, 6, 13, 19, 26 }
 #define DATA_PINS_COUNT 12
-
-#define SAMPLE_RATE 500000 // S/s
-
-#define TARGET_FILE "samples.csv"
-#define CAPTURE_TIME 1.0 // seconds
 
 // DMA registers
 #define BCM2835_PERI_BASE   0x3F000000
@@ -22,6 +19,9 @@
 
 #define GPLEV0              0x34    /* GPIO Level 0 */
 
+volatile unsigned long SAMPLE_RATE;
+volatile float CAPTURE_TIME;
+char TARGET_FILE[50] = "samples.csv";
 
 volatile unsigned int *gpio;
 
@@ -90,10 +90,15 @@ void run_sampler() {
     int data_pins[DATA_PINS_COUNT] = DATA_PINS;
     int sample_rate = SAMPLE_RATE;
     const char* target_file_path = TARGET_FILE;
-    long int sample_steps = CAPTURE_TIME * SAMPLE_RATE;
+    long int sample_steps = floor(CAPTURE_TIME * SAMPLE_RATE);
 
-    // make space in memory for the samples
-    int* samples = malloc(sizeof(int) * sample_steps * DATA_PINS_COUNT);
+    // make space in memory for the samples and leave some buffer space
+    printf("Allocating memory\n");
+    int* samples = malloc(sizeof(int) * sample_steps * DATA_PINS_COUNT + 100);
+    if(!samples){
+	printf("Failed to allocate memory\n");
+	return;
+    }
 
     // set up the pins
     gpioSetMode(clk_pin, PI_OUTPUT);
@@ -134,6 +139,7 @@ void run_sampler() {
     struct timespec current_time;
     clock_gettime(CLOCK_REALTIME, &start_time);
 
+    printf("Taking measurements...\n");
     monitor_pins(clk_pin, data_pins, sample_rate, samples, start_time, sample_steps);
 
     // get the current time
@@ -162,7 +168,19 @@ void run_sampler() {
     printf("Actual sample rate: %8ld S/s\n", sample_steps * 1000000000 / exec_time);
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    if(argc < 3 || (argc == 2 && argv[1] == "help") || argc > 4){
+	printf("Usage: dma <sample-rate> <capture-time> [<output-file>]\n");
+	printf("\tSample Rate: Samples per second\n\tCapture Time: Capture duration in ms\n");
+	return -1;
+    }
+
+    SAMPLE_RATE = atoi(argv[1]);
+    CAPTURE_TIME = ((float)atoi(argv[2]))/1000;
+    if(argc == 4){
+        strcpy(TARGET_FILE, argv[3]);
+    }
+
     run_sampler();
     return 0;
 }
