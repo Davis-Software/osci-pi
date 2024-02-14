@@ -1,3 +1,4 @@
+socket/.venv/
 /cmake-build-debug
 samples.csv
 dma
