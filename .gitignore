@@ -1,4 +1,5 @@
-socket/.venv/
-/cmake-build-debug
+.venv/
+cmake-build-debug/
 samples.csv
 dma
+socket_out.csv
