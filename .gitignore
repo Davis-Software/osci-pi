@@ -1,4 +1,6 @@
+.idea/
 .venv/
+venv/
 cmake-build-debug/
 samples.csv
 dma
