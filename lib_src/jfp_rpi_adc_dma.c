@@ -25,13 +25,8 @@ char TARGET_FILE[50] = "samples.csv";
 
 volatile unsigned int *gpio;
 
-void write_samples(FILE* file, int* samples) {
-    for (int i = 0; i < SAMPLE_RATE * CAPTURE_TIME; i++) {
-        // calculate the time for a single sample
-        struct timespec time_for_sample;
-        time_for_sample.tv_sec = 0;
-        time_for_sample.tv_nsec = 1000000000 / SAMPLE_RATE;
-
+void write_samples(FILE* file, int* samples, long int* timings) {
+    for (int i = 1; i < SAMPLE_RATE * CAPTURE_TIME; i++) {
         // load first sample bits and add them
         int val = 0;
         for (int j = 0; j < DATA_PINS_COUNT; j++) {
@@ -39,16 +34,23 @@ void write_samples(FILE* file, int* samples) {
         }
 
         // write the time and the samples to the file
-        long t = time_for_sample.tv_nsec * i;
-        fprintf(file, "%8ld", t);
+        fprintf(file, "%ld", timings[i]);
         fprintf(file, ",%d\n", val);
     }
 }
 
 
-void monitor_pins(int clk_pin, int* data_pins, int sample_rate, int* samples, struct timespec start_time, long int sample_steps) {
+void monitor_pins(int clk_pin, int* data_pins, int sample_rate, int* samples, long int* timings, struct timespec start_time, long int sample_steps) {
     unsigned int reg = gpio[GPLEV0 / 4];
     long int sample_step = 0;
+
+    // some cleanup transfers
+    for(int i = 0; i < 50; i++){
+        gpioWrite(clk_pin, PI_HIGH);
+        sleep(.001);
+	gpioWrite(clk_pin, PI_LOW);
+	sleep(.001);
+    }
 
     while (sample_step < sample_steps) {
         // get the current time
@@ -64,6 +66,7 @@ void monitor_pins(int clk_pin, int* data_pins, int sample_rate, int* samples, st
         for (int i = 0; i < DATA_PINS_COUNT; i++) {
 //            samples[sample_bank + i] = (int)(reg >> data_pins[i]) & 1;
             samples[sample_bank + i] = gpioRead(data_pins[i]); // this is slower
+	    timings[sample_step] = current_time.tv_nsec - start_time.tv_nsec;
         }
 
         gpioWrite(clk_pin, PI_LOW);
@@ -95,6 +98,7 @@ void run_sampler() {
     // make space in memory for the samples and leave some buffer space
     printf("Allocating memory\n");
     int* samples = malloc(sizeof(int) * sample_steps * DATA_PINS_COUNT + 100);
+    long int* timings = malloc(sizeof(long int) * sample_steps + 100);
     if(!samples){
 	printf("Failed to allocate memory\n");
 	return;
@@ -140,7 +144,7 @@ void run_sampler() {
     clock_gettime(CLOCK_REALTIME, &start_time);
 
     printf("Taking measurements...\n");
-    monitor_pins(clk_pin, data_pins, sample_rate, samples, start_time, sample_steps);
+    monitor_pins(clk_pin, data_pins, sample_rate, samples, timings, start_time, sample_steps);
 
     // get the current time
     clock_gettime(CLOCK_REALTIME, &current_time);
@@ -153,7 +157,7 @@ void run_sampler() {
     }
 
     printf("Writing samples to file...\n");
-    write_samples(target_file, samples);
+    write_samples(target_file, samples, timings);
 
     fclose(target_file);
 
@@ -171,12 +175,12 @@ void run_sampler() {
 int main(int argc, char* argv[]) {
     if(argc < 3 || (argc == 2 && argv[1] == "help") || argc > 4){
 	printf("Usage: dma <sample-rate> <capture-time> [<output-file>]\n");
-	printf("\tSample Rate: Samples per second\n\tCapture Time: Capture duration in ms\n");
+	printf("\tSample Rate: Samples per second\n\tCapture Time: Capture duration in µs\n");
 	return -1;
     }
 
     SAMPLE_RATE = atoi(argv[1]);
-    CAPTURE_TIME = ((float)atoi(argv[2]))/1000;
+    CAPTURE_TIME = ((float)atoi(argv[2]))/1000000;
     if(argc == 4){
         strcpy(TARGET_FILE, argv[3]);
     }
