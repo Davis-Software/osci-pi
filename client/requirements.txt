@@ -2,3 +2,4 @@ flask
 requests
 matplotlib
 pillow
+scipy
