@@ -2,6 +2,7 @@
 .venv/
 venv/
 cmake-build-debug/
+__pycache__/
 samples.csv
 dma
 socket_out.csv
